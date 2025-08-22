@@ -47,8 +47,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     tb_writer = prepare_output_and_logger(dataset)
 
     # init visdom
-    is_open = check_socket_open(dataset.visdom_server, dataset.visdom_port)
+    # is_open = check_socket_open(dataset.visdom_server, dataset.visdom_port)
     retry = None
+    is_open = True
     while not is_open:
         retry = input(
             "visdom port ({}:{}) not open, retry? (y/n) ".format(dataset.visdom_server, dataset.visdom_port))
@@ -59,8 +60,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 dataset.visdom_server, dataset.visdom_port)
         else:
             break
-    vis = visdom.Visdom(
-        server=dataset.visdom_server, port=dataset.visdom_port)
+    # vis = visdom.Visdom(
+    #     server=dataset.visdom_server, port=dataset.visdom_port)
+    vis = None
 
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
@@ -100,23 +102,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # aligned_train_pose, sim3 = prealign_cameras(train_pose, train_pose_GT)
     # aligned_test_pose = align_cameras(sim3, test_pose_gt)
 
+    network_gui.conn = None
+
     for iteration in range(first_iter, opt.iterations + 1):
-        if network_gui.conn == None:
-            network_gui.try_connect()
-        while network_gui.conn != None:
-            try:
-                net_image_bytes = None
-                custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
-                if custom_cam != None:
-                    net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)[
-                        "render"]
-                    net_image_bytes = memoryview((torch.clamp(
-                        net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-                network_gui.send(net_image_bytes, dataset.source_path)
-                if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
-                    break
-            except Exception as e:
-                network_gui.conn = None
+        # if network_gui.conn == None:
+        #     network_gui.try_connect()
+        # while network_gui.conn != None:
+        #     try:
+        #         net_image_bytes = None
+        #         custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
+        #         if custom_cam != None:
+        #             net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)[
+        #                 "render"]
+        #             net_image_bytes = memoryview((torch.clamp(
+        #                 net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+        #         network_gui.send(net_image_bytes, dataset.source_path)
+        #         if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
+        #             break
+        #     except Exception as e:
+        #         network_gui.conn = None
 
         iter_start.record()
 
@@ -210,8 +214,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if iteration in testing_iterations:
                 print(f"blur_weight={blur_weight}")
             # Log and save
-            training_report(tb_writer, vis, iteration, image_loss, loss, l1_loss, iter_start.elapsed_time(
-                iter_end), testing_iterations, scene, pipe, background, opt)
+            # training_report(tb_writer, vis, iteration, image_loss, loss, l1_loss, iter_start.elapsed_time(
+            #     iter_end), testing_iterations, scene, pipe, background, opt)
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -289,10 +293,10 @@ def prepare_output_and_logger(args):
 
     # Create Tensorboard writer
     tb_writer = None
-    if TENSORBOARD_FOUND:
-        tb_writer = SummaryWriter(args.model_path)
-    else:
-        print("Tensorboard not available: not logging progress")
+    # if TENSORBOARD_FOUND:
+    #     tb_writer = SummaryWriter(args.model_path)
+    # else:
+    #     print("Tensorboard not available: not logging progress")
     return tb_writer
 
 
@@ -316,8 +320,9 @@ def training_report(tb_writer, vis, iteration, Ll1, loss, l1_loss, elapsed, test
         aligned_train_pose, sim3 = prealign_cameras(train_pose, train_pose_GT)
         aligned_test_pose = align_cameras(sim3, test_pose_gt)
 
-        vis_cameras(vis, step=iteration, poses=[
-                    aligned_train_pose, train_pose_GT])
+        if vis is not None:
+            vis_cameras(vis, step=iteration, poses=[
+                        aligned_train_pose, train_pose_GT])
 
         validation_configs = ({'name': 'test', 'cameras': scene.getTestCameras()},
                               {'name': 'train', 'cameras': [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
@@ -432,7 +437,7 @@ if __name__ == "__main__":
     print(torch.cuda.current_device())
 
     # Start GUI server, configure and run training
-    network_gui.init(args.ip, args.port)
+    # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations,
              args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
